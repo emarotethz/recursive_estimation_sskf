@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalman Filter Simulation</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <style>
+        @font-face {
+            font-family: 'DINPro';
+            src: local('DINPro'), local('DIN Pro'), local('DIN Alternate'), local('DIN');
+        }
+        :root {
+            --bg-color: #ebecf0;
+            --panel-bg: #ffffff;
+            --text-main: #172b4d;
+            --text-muted: #5e6c84;
+            --primary: #0052cc;
+            --primary-hover: #0047b3;
+            --accent: #ff5630;
+            --accent-hover: #e34927;
+            --meas-color: #ff991f;
+            --border: #dfe1e6;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'DINPro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: row;
+            height: 100vh;
+            padding: 14px;
+            gap: 14px;
+            background: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.4;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 272px;
+            flex: 0 0 272px;
+            height: 100%;
+            padding: 18px;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(9,30,66,0.13);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        #main-content {
+            flex: 1 1 auto;
+            min-width: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: row;
+            gap: 14px;
+        }
+
+        .plot-container {
+            height: 100%;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(9,30,66,0.13);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #plot-cobweb-container {
+            flex: 0 0 auto;
+            aspect-ratio: 1 / 1;
+            max-width: 46%;
+        }
+
+        #plot-timeseries-container {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .plotly-graph {
+            flex: 1 1 auto;
+            min-height: 0;
+            width: 100%;
+        }
+
+        h2 {
+            font-size: 1.2rem; font-weight: 500;
+            border-bottom: 2px solid var(--border); padding-bottom: 8px;
+            margin-bottom: 14px;
+        }
+        h3 {
+            font-size: 0.72rem; text-transform: uppercase;
+            color: var(--text-muted); letter-spacing: 0.05em;
+            font-weight: 600; margin: 14px 0 8px 0;
+        }
+
+        .control-group { margin-bottom: 10px; transition: opacity 0.2s; }
+        .control-group.locked { opacity: 0.38; pointer-events: none; }
+
+        .label-row {
+            display: flex; justify-content: space-between; align-items: baseline;
+            font-size: 0.83rem; font-weight: 500; margin-bottom: 2px;
+        }
+        .val-display {
+            color: var(--primary); font-weight: 600;
+            font-family: monospace; font-size: 0.92rem;
+        }
+        input[type="range"] {
+            width: 100%; accent-color: var(--primary); cursor: pointer;
+        }
+
+        .button-group { display: flex; gap: 8px; margin-top: auto; padding-top: 14px; }
+        button {
+            flex: 1; padding: 9px 6px; border: none; border-radius: 4px;
+            font-size: 0.82rem; font-weight: 600; font-family: inherit;
+            cursor: pointer; transition: all 0.18s; color: white; text-transform: uppercase;
+        }
+        button:active { transform: scale(0.97); }
+        #btn-play        { background: var(--primary); }
+        #btn-play:hover  { background: var(--primary-hover); }
+        #btn-play.playing { background: var(--meas-color); color: #172b4d; }
+        #btn-step        { background: var(--text-muted); }
+        #btn-step:hover  { background: #42526e; }
+        #btn-reset       { background: var(--accent); }
+        #btn-reset:hover { background: var(--accent-hover); }
+
+        #status {
+            margin-top: 10px; padding: 10px 12px;
+            background: #e6fcff; border-left: 3px solid #00b8d9;
+            border-radius: 4px; font-size: 0.83rem;
+        }
+
+        details.eq-section > summary {
+            font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted);
+            letter-spacing: 0.05em; font-weight: 600; cursor: pointer;
+            user-select: none; list-style: none;
+            margin: 14px 0 6px 0; display: flex; align-items: center; gap: 4px;
+        }
+        details.eq-section > summary::-webkit-details-marker { display: none; }
+        details.eq-section > summary::before { content: '▸'; font-size: 0.68rem; }
+        details.eq-section[open] > summary::before { content: '▾'; }
+
+        .eq-box {
+            background: var(--bg-color); border-radius: 4px;
+            padding: 4px 2px 8px 2px; font-size: 0.78rem; overflow-x: auto;
+        }
+        .eq-step {
+            font-size: 0.62rem; text-transform: uppercase; color: var(--text-muted);
+            letter-spacing: 0.05em; font-weight: 700; margin: 8px 0 1px 4px;
+        }
+        .eq-step:first-child { margin-top: 2px; }
+        .eq-line { display: flex; justify-content: center; }
+        .eq-line .katex-display { margin: 0.05em 0; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+
+    <h3>System Parameters</h3>
+
+    <div class="control-group" id="cg-a">
+        <div class="label-row">
+            <span>Dynamics (<i>a</i>)</span>
+            <span class="val-display" id="val-a">0.95</span>
+        </div>
+        <input type="range" id="a" min="0" max="1.5" step="0.01" value="0.95">
+    </div>
+
+    <div class="control-group" id="cg-h">
+        <div class="label-row">
+            <span>Observation (<i>h</i>)</span>
+            <span class="val-display" id="val-h">0.60</span>
+        </div>
+        <input type="range" id="h" min="0" max="2" step="0.01" value="0.6">
+    </div>
+
+    <div class="control-group" id="cg-q">
+        <div class="label-row">
+            <span>Process Noise (<i>q</i>)</span>
+            <span class="val-display" id="val-q">1.00</span>
+        </div>
+        <input type="range" id="q" min="0" max="3" step="0.05" value="1">
+    </div>
+
+    <div class="control-group" id="cg-r">
+        <div class="label-row">
+            <span>Measurement Noise (<i>r</i>)</span>
+            <span class="val-display" id="val-r">1.00</span>
+        </div>
+        <input type="range" id="r" min="0.05" max="5" step="0.05" value="1">
+    </div>
+
+    <h3>Initial Conditions</h3>
+    <div class="control-group" id="cg-p0">
+        <div class="label-row">
+            <span>Init. Variance <i>P<sub>0</sub></i></span>
+            <span class="val-display" id="val-p0">0.10</span>
+        </div>
+        <input type="range" id="p0" min="0" max="10" step="0.1" value="0.1">
+    </div>
+
+    <div id="status">
+        Step <i>k</i>: <strong id="stat-k">0</strong> &nbsp;
+        <i>P<sub>p</sub></i>(<i>k</i>): <strong id="stat-p" style="color:var(--primary)">0.00</strong><br>
+        <i>P</i><sub>&infin;</sub>: <strong id="stat-pinf" style="color:var(--accent)">—</strong>
+    </div>
+
+    <details class="eq-section" open>
+        <summary>Model</summary>
+        <div class="eq-box">
+            <div class="eq-step">Process &amp; Measurement</div>
+            <div class="eq-line" id="eq-proc"></div>
+            <div class="eq-line" id="eq-meas"></div>
+
+            <div class="eq-step">Variance Recursion</div>
+            <div class="eq-line" id="eq-ricc"></div>
+        </div>
+    </details>
+
+    <div class="button-group">
+        <button id="btn-play">Play</button>
+        <button id="btn-step">Step</button>
+        <button id="btn-reset">Reset</button>
+    </div>
+</div>
+
+<div id="main-content">
+    <div class="plot-container" id="plot-cobweb-container">
+        <div id="plot-cobweb" class="plotly-graph"></div>
+    </div>
+    <div class="plot-container" id="plot-timeseries-container">
+        <div id="plot-timeseries" class="plotly-graph"></div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const D = { displayMode: true, throwOnError: false };
+    [
+        ['eq-proc', 'x(k) = a\\,x(k{-}1) + v(k{-}1)'],
+        ['eq-meas', 'z(k) = h\\,x(k) + w(k)'],
+        ['eq-ricc', 'P_p(k{+}1) = \\dfrac{a^2 r\\,P_p(k)}{h^2 P_p(k)+r} + q'],
+    ].forEach(([id, tex]) =>
+        document.getElementById(id).innerHTML = katex.renderToString(tex, D)
+    );
+})();
+
+function randn() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+function f_update(P, a, h, q, r) {
+    const denom = h * h * P + r;
+    if (denom === 0) return a * a * P + q;
+    return (a * a * r * P) / denom + q;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function getParams() {
+    return {
+        a:  +document.getElementById('a').value,
+        h:  +document.getElementById('h').value,
+        q:  +document.getElementById('q').value,
+        r:  +document.getElementById('r').value,
+        p0: +document.getElementById('p0').value
+    };
+}
+
+function computePInfinity(p) {
+    const { a, h, q, r } = p;
+    if (h === 0) {
+        // No observation: P_p(k+1) = a²P + q — diverges unless |a| < 1
+        return Math.abs(a) < 1 ? q / (1 - a * a) : Infinity;
+    }
+    // Solve fixed point h²P² + [r(1−a²) − qh²]P − qr = 0 analytically.
+    // Discriminant = B² + 4h²qr ≥ 0 always; positive root always exists.
+    const A = h * h;
+    const B = r * (1 - a * a) - q * h * h;
+    const disc = B * B + 4 * A * q * r;
+    return (-B + Math.sqrt(disc)) / (2 * A);
+}
+
+function snapToOne(val) {
+    return Math.abs(val - 1.0) < 0.025 ? 1.0 : val;
+}
+
+const STEP_MS    = 150;
+const maxP       = 15;
+const windowSize = 100;
+const LOCK_IDS   = ['a', 'h', 'q', 'r', 'p0'];
+
+let isPlaying = false, rafId = null, lastRafTime = null, stepElapsed = 0;
+let currentK = 1, x_true = 0, x_hat_p = 0, P_p = 0.1, pInfinity = 0;
+let cobwebMax = 15;
+
+let stairsX = [], stairsY = [];
+let timeData = [], estErrData = [], measErrData = [], stdPlusData = [], stdMinusData = [];
+let curveX = [], curveY = [];
+let nextPt = null, smoothYRange = null;
+let plotsReady = false;
+
+function computeNext() {
+    const p = getParams();
+    if (P_p > 1e8 || isNaN(P_p)) return null;
+    const w   = Math.sqrt(p.r) * randn();
+    const z   = p.h * x_true + w;
+    const Kd  = p.h * p.h * P_p + p.r;
+    const K   = Kd > 0 ? (P_p * p.h) / Kd : 0;
+    const xm  = x_hat_p + K * (z - p.h * x_hat_p);
+    const Pm  = (1 - K * p.h) * P_p;
+    const Pn  = f_update(P_p, p.a, p.h, p.q, p.r);
+    const v   = Math.sqrt(p.q) * randn();
+    return {
+        k:            currentK,
+        est_err:      xm - x_true,
+        meas_err:     p.h !== 0 ? (z - p.h * x_true) : 0,
+        std:          Math.sqrt(Math.max(Pm, 0)),
+        stPfrom:      P_p,
+        stPto:        isFinite(Pn) ? Math.min(Pn, cobwebMax * 20) : cobwebMax * 20,
+        x_true_next:  p.a * x_true + v,
+        x_hat_p_next: p.a * xm,
+        P_p_next:     Pn
+    };
+}
+
+function commitNext() {
+    if (!nextPt) nextPt = computeNext();
+    if (!nextPt) return false;
+    const np = nextPt;
+    timeData.push(np.k);
+    estErrData.push(np.est_err);
+    measErrData.push(np.meas_err);
+    stdPlusData.push(np.std);
+    stdMinusData.push(-np.std);
+    if (stairsX.length < 400) {
+        if (stairsX.length === 1) {
+            stairsX.push(np.stPfrom);
+            stairsY.push(np.stPto);
+        } else {
+            stairsX.push(np.stPfrom, np.stPfrom);
+            stairsY.push(np.stPfrom, np.stPto);
+        }
+    }
+    x_true  = np.x_true_next;
+    x_hat_p = np.x_hat_p_next;
+    P_p     = np.P_p_next;
+    currentK++;
+    document.getElementById('stat-k').innerText = currentK - 1;
+    document.getElementById('stat-p').innerText = isFinite(np.stPfrom) ? np.stPfrom.toFixed(3) : '\u221e';
+    nextPt = computeNext();
+    return true;
+}
+
+function renderFrame(t) {
+    if (!plotsReady) return;
+
+    const ws    = currentK > windowSize + 1 ? timeData.length - windowSize : 0;
+    const wTime = timeData.slice(ws),    wEst  = estErrData.slice(ws);
+    const wMeas = measErrData.slice(ws), wSP   = stdPlusData.slice(ws);
+    const wSM   = stdMinusData.slice(ws);
+
+    let cTime = [...wTime], cEst = [...wEst], cSP = [...wSP], cSM = [...wSM];
+    if (nextPt && wTime.length > 0) {
+        const li = wTime.length - 1;
+        cTime.push(lerp(wTime[li], nextPt.k,       t));
+        cEst.push( lerp(wEst[li],  nextPt.est_err, t));
+        cSP.push(  lerp(wSP[li],   nextPt.std,     t));
+        cSM.push(  lerp(wSM[li],  -nextPt.std,     t));
+    }
+
+    const head = (currentK - 1) + t;
+    const rightEdge = Math.max(30, head + 2);
+    const leftEdge  = Math.max(0, rightEdge - windowSize);
+
+    const absVals = [...wEst, ...wMeas, ...wSP].map(Math.abs).filter(isFinite);
+    const maxAbs  = absVals.length ? Math.max(...absVals, 1) : 1;
+    const tgt = maxAbs < 500 ? [-maxAbs * 1.2, maxAbs * 1.2] : null;
+    if (!smoothYRange)    smoothYRange = tgt;
+    else if (tgt) smoothYRange = [lerp(smoothYRange[0], tgt[0], 0.05),
+                                   lerp(smoothYRange[1], tgt[1], 0.05)];
+
+    Plotly.react('plot-timeseries', [
+        { x: cTime, y: cSP, mode: 'lines', line: {width: 0}, hoverinfo: 'skip', showlegend: false },
+        { x: cTime, y: cSM, fill: 'tonexty', fillcolor: 'rgba(255,86,48,0.10)',
+          mode: 'lines', line: {width: 0}, hoverinfo: 'skip', showlegend: false },
+        { x: cTime, y: cSP, mode: 'lines',
+          line: {color: 'rgba(255,86,48,0.8)', width: 1.5, dash: 'dot'}, name: '+1\u03C3(P\u2098)', hoverinfo: 'skip' },
+        { x: cTime, y: cSM, mode: 'lines',
+          line: {color: 'rgba(255,86,48,0.8)', width: 1.5, dash: 'dot'}, name: '-1\u03C3(P\u2098)', hoverinfo: 'skip' },
+        { x: wTime, y: wMeas, mode: 'markers', name: 'Measurement error',
+          marker: {color: 'rgba(255,153,31,0.80)', size: 5, symbol: 'cross'} },
+        { x: cTime, y: cEst,  mode: 'lines+markers', name: 'Estimation error',
+          line: {color: '#0052cc', width: 2.5}, marker: {size: 4} }
+    ], {
+        title:  { text: 'Estimation & Measurement Error', font: {family: 'DINPro,sans-serif', size: 13} },
+        xaxis:  { title: 'k', range: [leftEdge, rightEdge], gridcolor: '#ebecf0', tickfont: {size: 11} },
+        yaxis:  { title: 'Error', range: smoothYRange, gridcolor: '#ebecf0',
+                  zeroline: true, zerolinecolor: '#a5adba', zerolinewidth: 1.5, tickfont: {size: 11} },
+        showlegend: true,
+        legend: { orientation: 'h', y: 1.0, yanchor: 'top', x: 0.5, xanchor: 'center', font: {size: 13}, bgcolor: 'rgba(0,0,0,0)' },
+        margin: { t: 54, l: 44, r: 14, b: 38 },
+        plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    });
+
+    let cStX = [...stairsX], cStY = [...stairsY];
+    if (nextPt && stairsX.length > 0 && P_p <= cobwebMax) {
+        const lx = stairsX[stairsX.length - 1], ly = stairsY[stairsY.length - 1];
+        const from = nextPt.stPfrom, tgt = nextPt.stPto;
+        if (stairsX.length === 1) {
+            cStX.push(lx); cStY.push(lerp(0, tgt, t));
+        } else {
+            if (t < 0.5) {
+                cStX.push(lerp(lx, from, t * 2)); cStY.push(ly);
+            } else {
+                const t2 = (t - 0.5) * 2;
+                cStX.push(from); cStY.push(ly);
+                cStX.push(from); cStY.push(lerp(from, tgt, t2));
+            }
+        }
+    }
+    const dotX = stairsX.length > 0 ? [stairsX[0]] : [];
+    const dotY = [0];
+
+    Plotly.react('plot-cobweb', [
+        { x: [0, cobwebMax], y: [0, cobwebMax], mode: 'lines',
+          line: {color: '#ff5630', width: 1.5}, hoverinfo: 'skip' },
+        { x: curveX, y: curveY, mode: 'lines', line: {color: '#172b4d', width: 2.5}, hoverinfo: 'skip' },
+        { x: cStX, y: cStY, mode: 'lines', line: {color: '#0052cc', width: 1.5} },
+        { x: dotX, y: dotY, mode: 'markers', marker: {color: '#ff5630', size: 8} },
+        { x: dotX, y: dotX.length ? [-0.7] : [], mode: 'text',
+          text: dotX.length ? ['P\u209a(1)'] : [], textfont: {size: 11, color: '#ff5630'} }
+    ], {
+        title:  { text: 'Variance Convergence', font: {family: 'DINPro,sans-serif', size: 13} },
+        xaxis:  { title: 'P\u209a(k)',   range: [0, cobwebMax], gridcolor: '#ebecf0', tickfont: {size: 11} },
+        yaxis:  { title: 'P\u209a (k+1)', range: [0, cobwebMax], scaleanchor: 'x', scaleratio: 1,
+                  gridcolor: '#ebecf0', tickfont: {size: 11} },
+        showlegend: false,
+        margin: { t: 36, l: 44, r: 14, b: 38 },
+        plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    });
+}
+
+function rafLoop(ts) {
+    if (!isPlaying) return;
+    if (lastRafTime === null) lastRafTime = ts;
+    stepElapsed += ts - lastRafTime;
+    lastRafTime = ts;
+    if (stepElapsed >= STEP_MS) {
+        if (!commitNext()) {
+            togglePlay();
+            document.getElementById('stat-p').innerText = 'DIVERGED';
+            return;
+        }
+        stepElapsed -= STEP_MS;
+        if (stepElapsed >= STEP_MS) stepElapsed = 0;
+    }
+    renderFrame(Math.min(stepElapsed / STEP_MS, 1.0));
+    rafId = requestAnimationFrame(rafLoop);
+}
+
+function initSimulation() {
+    const p = getParams();
+    const firstPp = p.a * p.a * p.p0 + p.q;
+    currentK = 1; x_true = Math.sqrt(Math.max(p.p0, 0)) * randn(); x_hat_p = 0; P_p = firstPp;
+    pInfinity = computePInfinity(p);
+
+    stairsX = [firstPp]; stairsY = [0];
+    timeData = []; estErrData = []; measErrData = [];
+    stdPlusData = []; stdMinusData = [];
+
+    curveX = []; curveY = [];
+    const curveStep = cobwebMax / 300;
+    for (let x = 0; x <= cobwebMax + curveStep; x += curveStep) {
+        curveX.push(x);
+        const fy = f_update(x, p.a, p.h, p.q, p.r);
+        curveY.push(isFinite(fy) ? fy : cobwebMax * 20);
+    }
+
+    nextPt = computeNext();
+    stepElapsed = 0; lastRafTime = null; smoothYRange = null;
+
+
+    document.getElementById('stat-k').innerText    = 0;
+    document.getElementById('stat-p').innerText    = firstPp.toFixed(3);
+    document.getElementById('stat-pinf').innerText = isFinite(pInfinity) ? pInfinity.toFixed(3) : '\u221e';
+
+    const cobwebTraces = [
+        { x: [0, cobwebMax], y: [0, cobwebMax], mode: 'lines',
+          line: {color: '#ff5630', width: 1.5}, hoverinfo: 'skip' },
+        { x: curveX, y: curveY, mode: 'lines', line: {color: '#172b4d', width: 2.5}, hoverinfo: 'skip' },
+        { x: [...stairsX], y: [...stairsY], mode: 'lines', line: {color: '#0052cc', width: 1.5} },
+        { x: [stairsX[0]], y: [0], mode: 'markers', marker: {color: '#ff5630', size: 8} },
+        { x: [stairsX[0]], y: [-0.7], mode: 'text',
+          text: ['P\u209a(1)'], textfont: {size: 11, color: '#ff5630'} }
+    ];
+    const cobwebLayout = {
+        title:  { text: 'Variance Convergence', font: {family: 'DINPro,sans-serif', size: 13} },
+        xaxis:  { title: 'P\u209a(k)',   range: [0, cobwebMax], gridcolor: '#ebecf0', tickfont: {size: 11} },
+        yaxis:  { title: 'P\u209a (k+1)', range: [0, cobwebMax], scaleanchor: 'x', scaleratio: 1,
+                  gridcolor: '#ebecf0', tickfont: {size: 11} },
+        showlegend: false, margin: { t: 36, l: 44, r: 14, b: 38 },
+        plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+    const tsTraces = [
+        { x: [], y: [], mode: 'lines', line: {width: 0}, hoverinfo: 'skip', showlegend: false },
+        { x: [], y: [], fill: 'tonexty', fillcolor: 'rgba(255,86,48,0.10)',
+          mode: 'lines', line: {width: 0}, hoverinfo: 'skip', showlegend: false },
+        { x: [], y: [], mode: 'lines',
+          line: {color: 'rgba(255,86,48,0.8)', width: 1.5, dash: 'dot'}, name: '+1\u03C3(P\u2098)', hoverinfo: 'skip' },
+        { x: [], y: [], mode: 'lines',
+          line: {color: 'rgba(255,86,48,0.8)', width: 1.5, dash: 'dot'}, name: '-1\u03C3(P\u2098)', hoverinfo: 'skip' },
+        { x: [], y: [], mode: 'markers', name: 'Measurement error',
+          marker: {color: 'rgba(255,153,31,0.80)', size: 5, symbol: 'cross'} },
+        { x: [], y: [], mode: 'lines+markers', name: 'Estimation error',
+          line: {color: '#0052cc', width: 2.5}, marker: {size: 4} }
+    ];
+    const tsLayout = {
+        title:  { text: 'Estimation & Measurement Error', font: {family: 'DINPro,sans-serif', size: 13} },
+        xaxis:  { title: 'k', range: [0, 30], gridcolor: '#ebecf0', tickfont: {size: 11} },
+        yaxis:  { title: 'Error', gridcolor: '#ebecf0',
+                  zeroline: true, zerolinecolor: '#a5adba', zerolinewidth: 1.5, tickfont: {size: 11} },
+        showlegend: true,
+        legend: { orientation: 'h', y: 1.0, yanchor: 'top', x: 0.5, xanchor: 'center', font: {size: 13}, bgcolor: 'rgba(0,0,0,0)' },
+        margin: { t: 54, l: 44, r: 14, b: 38 },
+        plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+    const cfg = { responsive: true, displayModeBar: false };
+
+    plotsReady = false;
+    requestAnimationFrame(() => {
+        Plotly.newPlot('plot-cobweb',     cobwebTraces, cobwebLayout, cfg);
+        Plotly.newPlot('plot-timeseries', tsTraces,     tsLayout,     cfg);
+        plotsReady = true;
+        renderFrame(0);
+    });
+}
+
+function stepSimulation() {
+    if (!commitNext()) {
+        document.getElementById('stat-p').innerText = 'DIVERGED';
+        return;
+    }
+    renderFrame(0);
+}
+
+function togglePlay() {
+    const btn = document.getElementById('btn-play');
+    if (isPlaying) {
+        isPlaying = false;
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        lastRafTime = null;
+        btn.innerText = 'Play'; btn.classList.remove('playing');
+        LOCK_IDS.forEach(id => {
+            document.getElementById(id).disabled = false;
+            document.getElementById('cg-' + id).classList.remove('locked');
+        });
+    } else {
+        isPlaying = true;
+        lastRafTime = null;
+        rafId = requestAnimationFrame(rafLoop);
+        btn.innerText = 'Pause'; btn.classList.add('playing');
+        LOCK_IDS.forEach(id => {
+            document.getElementById(id).disabled = true;
+            document.getElementById('cg-' + id).classList.add('locked');
+        });
+    }
+}
+
+['a', 'h'].forEach(id => {
+    const sl = document.getElementById(id), dv = document.getElementById('val-' + id);
+    sl.addEventListener('input', e => {
+        let v = snapToOne(+e.target.value);
+        sl.value = String(v);
+        dv.innerText = v.toFixed(2);
+        initSimulation();
+    });
+});
+['q', 'r', 'p0'].forEach(id => {
+    const sl = document.getElementById(id), dv = document.getElementById('val-' + id);
+    sl.addEventListener('input', e => { dv.innerText = (+e.target.value).toFixed(2); initSimulation(); });
+});
+
+document.getElementById('btn-play').addEventListener('click', togglePlay);
+document.getElementById('btn-step').addEventListener('click', () => { if (isPlaying) togglePlay(); stepSimulation(); });
+document.getElementById('btn-reset').addEventListener('click', () => { if (isPlaying) togglePlay(); initSimulation(); });
+
+initSimulation();
+</script>
+</body>
+</html>
